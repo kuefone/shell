@@ -33,6 +33,36 @@ check_and_install() {
     fi
 }
 
+# --- 设置定时任务 ---
+setup_cron_job() {
+    # 检查脚本路径
+    SCRIPT_PATH=$(readlink -f "$0")
+    
+    # 创建临时crontab文件
+    TEMP_CRON=$(mktemp)
+    
+    # 导出当前crontab内容
+    crontab -l > "$TEMP_CRON" 2>/dev/null || echo "" > "$TEMP_CRON"
+    
+    # 检查是否已存在此脚本的cron任务
+    if ! grep -q "$SCRIPT_PATH" "$TEMP_CRON"; then
+        # 添加每3天执行一次的cron任务
+        echo "0 0 */3 * * $SCRIPT_PATH" >> "$TEMP_CRON"
+        
+        # 应用新的crontab
+        if crontab "$TEMP_CRON"; then
+            echo "已设置每3天自动执行一次此脚本。"
+        else
+            echo "错误: 无法设置定时任务。"
+        fi
+    else
+        echo "定时任务已存在，无需重复设置。"
+    fi
+    
+    # 清理临时文件
+    rm -f "$TEMP_CRON"
+}
+
 # --- Script Main ---
 
 # 1. Check for root privileges
@@ -41,7 +71,10 @@ if [ "$(id -u)" -ne 0 ]; then
    exit 1
 fi
 
-# 2. Check and install dependencies
+# 2. 设置定时任务
+setup_cron_job
+
+# 3. Check and install dependencies
 echo "检查必要的工具..."
 check_and_install "dig" "dnsutils"
 check_and_install "ping" "iputils-ping"
@@ -55,7 +88,7 @@ check_and_install "mktemp" "coreutils" # Typically built-in
 echo "所有必要的工具都已存在或已安装。"
 
 
-# 3. Process Domains
+# 4. Process Domains
 echo "开始解析和测试域名..."
 IFS=',' read -r -a DOMAINS <<< "$DOMAINS_LIST"
 declare -A final_hosts
@@ -116,7 +149,7 @@ for domain in "${DOMAINS[@]}"; do
     fi
 done
 
-# 4. Update /etc/hosts file
+# 5. Update /etc/hosts file
 if [ ${#final_hosts[@]} -eq 0 ]; then
     echo "没有有效的域名/IP对可供更新。退出。"
     exit 0
@@ -199,7 +232,7 @@ else
     echo "$HOSTS_MARKER_END" >> "$temp_hosts_file"
 fi
 
-# 5. Replace original hosts file (NO BACKUP)
+# 6. Replace original hosts file (NO BACKUP)
 echo "直接用新内容覆盖 /etc/hosts (无备份)..."
 # Use cat and redirect instead of mv to preserve original permissions/owner more reliably sometimes
 if cat "$temp_hosts_file" > /etc/hosts; then
